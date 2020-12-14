@@ -3,3 +3,7 @@
 thumbs/
 *.mp4
 *.jpeg
+config.ini
+res_file.dict
+.vscode/.ropeproject/objectdb
+.vscode/.ropeproject/config.py
