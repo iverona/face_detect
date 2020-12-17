@@ -4,47 +4,56 @@ import imageio
 from PIL import Image, ImageDraw
 import numpy
 import pickle
-import tqdm
 import os
 from urllib.parse import urlparse
 
 def detect_faces(gcs_uri):
     """
-    TODO
-    """    
-    # """Detects faces in a video."""
+    Detects faces in a video.
+    """
+    result = ""
 
-    # client = videointelligence.VideoIntelligenceServiceClient()
+    input_file_name = os.path.basename(urlparse(gcs_uri).path)
+    save_to_file = "%s.res" % input_file_name
 
-    # # Configure the request
-    # config = videointelligence.types.FaceDetectionConfig(
-    #     include_bounding_boxes=True, include_attributes=True
-    # )
-    # context = videointelligence.types.VideoContext(face_detection_config=config)
+    if os.path.isfile(save_to_file):
+        print("Found existing file. Using it!")
+        res_file = open(save_to_file, "rb")
+        result = pickle.load(res_file)        
+    else:
+        client = videointelligence.VideoIntelligenceServiceClient()
 
-    # # Start the asynchronous request
-    # operation = client.annotate_video(
-    #     input_uri=gcs_uri,
-    #     features=[videointelligence.enums.Feature.FACE_DETECTION],
-    #     video_context=context,
-    # )
+        # Configure the request
+        config = videointelligence.types.FaceDetectionConfig(
+            include_bounding_boxes=True, include_attributes=True
+        )
+        context = videointelligence.types.VideoContext(face_detection_config=config)
 
-    # print("\nProcessing video for face detection annotations.")
-    # result = operation.result(timeout=300)
+        # Start the asynchronous request
+        operation = client.annotate_video(
+            input_uri=gcs_uri,
+            features=[videointelligence.enums.Feature.FACE_DETECTION],
+            video_context=context,
+        )
 
-    # print("\nFinished processing.\n")
+        print("\nProcessing video for face detection annotations.")
+        result = operation.result(timeout=300)
 
-    # res_file = open("res_file.dict", "wb")
-    # pickle.dump(result, res_file)
-    # res_file.close()
-    res_file = open("res_file.dict", "rb")
-    result = pickle.load(res_file)
+        print("\nFinished processing.\n")
+
+        res_file = open(save_to_file, "wb")
+        pickle.dump(result, res_file)
+        res_file.close()
 
     return result
+    
 
 def generate_offset_dict(result):
     """
-    TODO
+    Transform the API response to be addressable
+    by frame offset. It will return a dictionary 
+    with the offset as the key and boundingbox and 
+    attributes as lists. 
     """
     offset_dict = {}
     annotation_result = result.annotation_results[0]
@@ -62,20 +71,22 @@ def generate_offset_dict(result):
 
     return offset_dict
 
-def draw_boundingboxes(image, boundingboxes):
+def draw_boundingboxes(image, this_frame_boundingboxes):
     """
-    TODO
+    Transform the API response to be addressable
+    by offset
     """
     h_res, v_res = image.size
+
     draw = ImageDraw.Draw(image)
-    for i, boundingbox in enumerate(boundingboxes['boundingbox']):
+    for i, boundingbox in enumerate(this_frame_boundingboxes['boundingbox']):
         left = boundingbox.left * h_res
         top = boundingbox.top * v_res
         right = boundingbox.right * h_res
         bottom = boundingbox.bottom * v_res
 
         draw.rectangle([left ,top, right, bottom])
-        for i, attribute in enumerate(boundingboxes['attributes'][i]):
+        for i, attribute in enumerate(this_frame_boundingboxes['attributes'][i]):
             if(attribute.confidence >= 0.5):
                 draw.text([left,bottom+5*i], attribute.name)
 
@@ -87,7 +98,7 @@ if __name__ == "__main__":
 
     #image io constructs
     input_file_name = os.path.basename(urlparse(config['global']['input_video_gcs_uri']).path)
-    reader = imageio.get_reader('news_test.mp4')
+    reader = imageio.get_reader(input_file_name)
     print(reader.get_meta_data())
     fps = float(config['global']['fps'])
 
@@ -106,7 +117,7 @@ if __name__ == "__main__":
         else:
             writer.append_data(im)
 
-        if i == 200:
-            break
+        # if i == 200:
+        #     break
 
     writer.close()
