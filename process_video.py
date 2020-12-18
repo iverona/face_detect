@@ -84,7 +84,7 @@ def draw_boundingboxes(image, this_frame_boundingboxes):
         right = int(boundingbox.right * h_res)
         bottom = int(boundingbox.bottom * v_res)
         
-        cv2.rectangle(image, (left,top), (right,bottom), (0,255,0), 3)
+        cv2.rectangle(image, (left,top), (right,bottom), (0,255,0), 2)
 
         sorted_attributes = []
         for attribute in this_frame_boundingboxes['attributes'][i]:
