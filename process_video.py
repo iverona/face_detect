@@ -1,7 +1,6 @@
 import configparser
 from google.cloud import videointelligence_v1p3beta1 as videointelligence
-import imageio
-from PIL import Image, ImageDraw
+import cv2
 import numpy
 import pickle
 import os
@@ -77,16 +76,15 @@ def draw_boundingboxes(image, this_frame_boundingboxes):
     The attributes are sorted so they do not move
     around in the image so much. 
     """
-    h_res, v_res = image.size
+    v_res, h_res, c = image.shape
 
-    draw = ImageDraw.Draw(image)
     for i, boundingbox in enumerate(this_frame_boundingboxes['boundingbox']):        
-        left = boundingbox.left * h_res
-        top = boundingbox.top * v_res
-        right = boundingbox.right * h_res
-        bottom = boundingbox.bottom * v_res
+        left = int(boundingbox.left * h_res)
+        top = int(boundingbox.top * v_res)
+        right = int(boundingbox.right * h_res)
+        bottom = int(boundingbox.bottom * v_res)
         
-        draw.rectangle([left ,top, right, bottom])
+        cv2.rectangle(image, (left,top), (right,bottom), (0,255,0), 3)
 
         sorted_attributes = []
         for attribute in this_frame_boundingboxes['attributes'][i]:
@@ -97,46 +95,54 @@ def draw_boundingboxes(image, this_frame_boundingboxes):
         
         if sorted_attributes:          
             for i, attribute in enumerate(sorted_attributes):
-                    draw.text([left,bottom+10*i], attribute)
+                    cv2.putText(image, attribute, (left, (bottom+20)+20*i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
 
-    return numpy.array(image)
+    return image
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('config.ini')
 
-    #image io constructs
     input_file_name = os.path.basename(urlparse(config['global']['input_video_gcs_uri']).path)
-    reader = imageio.get_reader(input_file_name)
-    print(reader.get_meta_data())
-    fps = float(config['global']['fps'])
+    cap = cv2.VideoCapture(input_file_name)
+    
+    fps = float(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
-    writer = imageio.get_writer(config['global']['output_video_filename'], fps=10)
+    print("File: %s FPS: %f Size: %ix%i" % (input_file_name, fps, frame_width, frame_height))
+
+    out = cv2.VideoWriter(config['global']['output_video_filename'],fourcc, 10, (frame_width,frame_height))
 
     result = detect_faces(config['global']['input_video_gcs_uri'])
 
     offset_dict = generate_offset_dict(result)
     f_since_last_hit = 0 # Frames processed since last written frame
 
-    for i, im in enumerate(reader):
-        frame_offset = "%.6f" % (i/fps)
-        print('Timestamp of frame %i is %s >> ' % (i, frame_offset), end='')
-        if frame_offset in offset_dict:
-            print('Hit. Appending')
-            bounded_image = draw_boundingboxes(Image.fromarray(im), offset_dict[frame_offset])     
-            writer.append_data(bounded_image)
-            f_since_last_hit = 0
-        else:
-            if f_since_last_hit <= 2:
-                f_since_last_hit += 1
-                print('Skipping')
-                continue
-            else:
-                print('Appending')
+    while(cap.isOpened()):
+        #Read a frame
+        ret, frame = cap.read()
+        if ret == True:
+            frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) 
+            frame_offset = "%.6f" % (float(cap.get(cv2.CAP_PROP_POS_MSEC))/1000)
+            print('Timestamp of frame %i is %s >> ' % (frame_number, frame_offset), end='')
+            if frame_offset in offset_dict:
+                print('Hit. Appending')
+                bounded_image = draw_boundingboxes(frame, offset_dict[frame_offset])     
+                out.write(frame)
                 f_since_last_hit = 0
-                writer.append_data(im)
+            else:
+                if f_since_last_hit <= 2:
+                    f_since_last_hit += 1
+                    print('Skipping')
+                    continue
+                else:
+                    print('Appending')
+                    f_since_last_hit = 0
+                    out.write(frame)
+        else:
+            break 
 
-        # if i == 200:
-        #     break
-
-    writer.close()
+    cap.release()
+    out.release()
