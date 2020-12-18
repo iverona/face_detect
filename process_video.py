@@ -37,7 +37,7 @@ def detect_faces(gcs_uri):
         )
 
         print("\nProcessing video for face detection annotations.")
-        result = operation.result(timeout=300)
+        result = operation.result(timeout=600)
 
         print("\nFinished processing.\n")
 
@@ -79,16 +79,24 @@ def draw_boundingboxes(image, this_frame_boundingboxes):
     h_res, v_res = image.size
 
     draw = ImageDraw.Draw(image)
-    for i, boundingbox in enumerate(this_frame_boundingboxes['boundingbox']):
+    for i, boundingbox in enumerate(this_frame_boundingboxes['boundingbox']):        
         left = boundingbox.left * h_res
         top = boundingbox.top * v_res
         right = boundingbox.right * h_res
         bottom = boundingbox.bottom * v_res
 
+        sorted_attributes = []
         draw.rectangle([left ,top, right, bottom])
-        for i, attribute in enumerate(this_frame_boundingboxes['attributes'][i]):
-            if(attribute.confidence >= 0.5):
-                draw.text([left,bottom+5*i], attribute.name)
+
+        for attribute in this_frame_boundingboxes['attributes'][i]:
+            if(attribute.confidence >= 0.6):
+                sorted_attributes.append(attribute.name)
+
+        sorted_attributes.sort()
+        
+        if sorted_attributes:          
+            for i, attribute in enumerate(sorted_attributes):
+                    draw.text([left,bottom+10*i], attribute)
 
     return numpy.array(image)
 
@@ -102,20 +110,30 @@ if __name__ == "__main__":
     print(reader.get_meta_data())
     fps = float(config['global']['fps'])
 
-    writer = imageio.get_writer(config['global']['output_video_filename'], fps=fps)
+    writer = imageio.get_writer(config['global']['output_video_filename'], fps=10)
 
     result = detect_faces(config['global']['input_video_gcs_uri'])
 
     offset_dict = generate_offset_dict(result)
+    f_since_last_hit = 0 # Frames processed since last written frame
 
     for i, im in enumerate(reader):
         frame_offset = "%.6f" % (i/fps)
-        print('Timestamp of frame %i is %s' % (i, frame_offset))
+        print('Timestamp of frame %i is %s >> ' % (i, frame_offset), end='')
         if frame_offset in offset_dict:
+            print('Hit. Appending')
             bounded_image = draw_boundingboxes(Image.fromarray(im), offset_dict[frame_offset])     
             writer.append_data(bounded_image)
+            f_since_last_hit = 0
         else:
-            writer.append_data(im)
+            if f_since_last_hit <= 2:
+                f_since_last_hit += 1
+                print('Skipping')
+                continue
+            else:
+                print('Appending')
+                f_since_last_hit = 0
+                writer.append_data(im)
 
         # if i == 200:
         #     break
