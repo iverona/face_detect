@@ -73,8 +73,9 @@ def generate_offset_dict(result):
 
 def draw_boundingboxes(image, this_frame_boundingboxes):
     """
-    Transform the API response to be addressable
-    by offset
+    Draw bounding boxes and attributes. 
+    The attributes are sorted so they do not move
+    around in the image so much. 
     """
     h_res, v_res = image.size
 
@@ -84,10 +85,10 @@ def draw_boundingboxes(image, this_frame_boundingboxes):
         top = boundingbox.top * v_res
         right = boundingbox.right * h_res
         bottom = boundingbox.bottom * v_res
-
-        sorted_attributes = []
+        
         draw.rectangle([left ,top, right, bottom])
 
+        sorted_attributes = []
         for attribute in this_frame_boundingboxes['attributes'][i]:
             if(attribute.confidence >= 0.6):
                 sorted_attributes.append(attribute.name)
